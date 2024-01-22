@@ -1,0 +1,4 @@
+www.google.com 142.250.195.68
+www.annauniv.edu 14.139.161.7
+www.example.com 13.120.134.3
+www.visagan.com 129.28.24.0

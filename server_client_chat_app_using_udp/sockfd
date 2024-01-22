@@ -1,0 +1,329 @@
+[4mrecv[24m(2)                     System Calls Manual                     [4mrecv[24m(2)
+
+[1mNAME[0m
+       recv, recvfrom, recvmsg - receive a message from a socket
+
+[1mLIBRARY[0m
+       Standard C library ([4mlibc[24m, [4m-lc[24m)
+
+[1mSYNOPSIS[0m
+       [1m#include <sys/socket.h>[0m
+
+       [1mssize_t recv(int [4m[22msockfd[24m[1m, void [4m[22mbuf[24m[1m[.[4m[22mlen[24m[1m], size_t [4m[22mlen[24m[1m,[0m
+                        [1mint [4m[22mflags[24m[1m);[0m
+       [1mssize_t recvfrom(int [4m[22msockfd[24m[1m, void [4m[22mbuf[24m[1m[restrict .[4m[22mlen[24m[1m], size_t [4m[22mlen[24m[1m,[0m
+                        [1mint [4m[22mflags[24m[1m,[0m
+                        [1mstruct sockaddr *_Nullable restrict [4m[22msrc_addr[24m[1m,[0m
+                        [1msocklen_t *_Nullable restrict [4m[22maddrlen[24m[1m);[0m
+       [1mssize_t recvmsg(int [4m[22msockfd[24m[1m, struct msghdr *[4m[22mmsg[24m[1m, int [4m[22mflags[24m[1m);[0m
+
+[1mDESCRIPTION[0m
+       The [1mrecv[22m(), [1mrecvfrom[22m(), and [1mrecvmsg[22m() calls are used to receive mes‐
+       sages  from a socket.  They may be used to receive data on both con‐
+       nectionless and connection‐oriented sockets.  This  page  first  de‐
+       scribes  common  features  of  all  three system calls, and then de‐
+       scribes the differences between the calls.
+
+       The only difference between [1mrecv[22m() and [1mread[22m(2) is  the  presence  of
+       [4mflags[24m.   With  a zero [4mflags[24m argument, [1mrecv[22m() is generally equivalent
+       to [1mread[22m(2) (but see NOTES).  Also, the following call
+
+           recv(sockfd, buf, len, flags);
+
+       is equivalent to
+
+           recvfrom(sockfd, buf, len, flags, NULL, NULL);
+
+       All three calls return the length of the message on successful  com‐
+       pletion.   If  a  message is too long to fit in the supplied buffer,
+       excess bytes may be discarded depending on the type  of  socket  the
+       message is received from.
+
+       If  no  messages are available at the socket, the receive calls wait
+       for a message to arrive, unless the socket is nonblocking  (see  [1mfc‐[0m
+       [1mntl[22m(2)),  in which case the value -1 is returned and [4merrno[24m is set to
+       [1mEAGAIN [22mor [1mEWOULDBLOCK[22m.  The receive calls normally return  any  data
+       available,  up  to the requested amount, rather than waiting for re‐
+       ceipt of the full amount requested.
+
+       An application can use [1mselect[22m(2), [1mpoll[22m(2), or [1mepoll[22m(7) to  determine
+       when more data arrives on a socket.
+
+   [1mThe flags argument[0m
+       The  [4mflags[24m  argument is formed by ORing one or more of the following
+       values:
+
+       [1mMSG_CMSG_CLOEXEC [22m([1mrecvmsg[22m() only; since Linux 2.6.23)
+              Set the close‐on‐exec flag for the file  descriptor  received
+              via a UNIX domain file descriptor using the [1mSCM_RIGHTS [22mopera‐
+              tion  (described  in  [1munix[22m(7)).   This flag is useful for the
+              same reasons as the [1mO_CLOEXEC [22mflag of [1mopen[22m(2).
+
+       [1mMSG_DONTWAIT [22m(since Linux 2.2)
+              Enables nonblocking operation; if the operation would  block,
+              the  call  fails  with the error [1mEAGAIN [22mor [1mEWOULDBLOCK[22m.  This
+              provides similar behavior to setting the [1mO_NONBLOCK [22mflag (via
+              the  [1mfcntl[22m(2)  [1mF_SETFL  [22moperation),  but  differs   in   that
+              [1mMSG_DONTWAIT  [22mis  a  per‐call option, whereas [1mO_NONBLOCK [22mis a
+              setting on the open file  description  (see  [1mopen[22m(2)),  which
+              will affect all threads in the calling process and as well as
+              other  processes  that hold file descriptors referring to the
+              same open file description.
+
+       [1mMSG_ERRQUEUE [22m(since Linux 2.2)
+              This flag specifies that queued  errors  should  be  received
+              from  the  socket error queue.  The error is passed in an an‐
+              cillary message with a type dependent on  the  protocol  (for
+              IPv4  [1mIP_RECVERR[22m).  The user should supply a buffer of suffi‐
+              cient size.  See [1mcmsg[22m(3) and [1mip[22m(7) for more information.  The
+              payload of the original  packet  that  caused  the  error  is
+              passed  as  normal data via [4mmsg_iovec[24m.  The original destina‐
+              tion address of the datagram that caused the  error  is  sup‐
+              plied via [4mmsg_name[24m.
+
+              The error is supplied in a [4msock_extended_err[24m structure:
+
+                  #define SO_EE_ORIGIN_NONE    0
+                  #define SO_EE_ORIGIN_LOCAL   1
+                  #define SO_EE_ORIGIN_ICMP    2
+                  #define SO_EE_ORIGIN_ICMP6   3
+
+                  struct sock_extended_err
+                  {
+                      uint32_t ee_errno;   /* Error number */
+                      uint8_t  ee_origin;  /* Where the error originated */
+                      uint8_t  ee_type;    /* Type */
+                      uint8_t  ee_code;    /* Code */
+                      uint8_t  ee_pad;     /* Padding */
+                      uint32_t ee_info;    /* Additional information */
+                      uint32_t ee_data;    /* Other data */
+                      /* More data may follow */
+                  };
+
+                  struct sockaddr *SO_EE_OFFENDER(struct sock_extended_err *);
+
+              [4mee_errno[24m  contains  the  [4merrno[24m  number  of  the queued error.
+              [4mee_origin[24m is the origin code of where the  error  originated.
+              The  other fields are protocol‐specific.  The macro [1mSO_EE_OF‐[0m
+              [1mFENDER [22mreturns a pointer to the address of the network object
+              where the error originated from given a pointer to the ancil‐
+              lary message.  If this address is not  known,  the  [4msa_family[0m
+              member  of  the  [4msockaddr[24m  contains  [1mAF_UNSPEC  [22mand the other
+              fields of the [4msockaddr[24m are undefined.   The  payload  of  the
+              packet that caused the error is passed as normal data.
+
+              For  local  errors, no address is passed (this can be checked
+              with the [4mcmsg_len[24m member of  the  [4mcmsghdr[24m).   For  error  re‐
+              ceives, the [1mMSG_ERRQUEUE [22mflag is set in the [4mmsghdr[24m.  After an
+              error  has  been passed, the pending socket error is regener‐
+              ated based on the next queued error and will be passed on the
+              next socket operation.
+
+       [1mMSG_OOB[0m
+              This flag requests receipt of out‐of‐band data that would not
+              be received in the normal data stream.  Some protocols  place
+              expedited data at the head of the normal data queue, and thus
+              this flag cannot be used with such protocols.
+
+       [1mMSG_PEEK[0m
+              This  flag  causes  the receive operation to return data from
+              the beginning of the receive queue without removing that data
+              from the queue.  Thus, a subsequent receive call will  return
+              the same data.
+
+       [1mMSG_TRUNC [22m(since Linux 2.2)
+              For   raw   ([1mAF_PACKET[22m),   Internet   datagram  (since  Linux
+              2.4.27/2.6.8), netlink (since Linux 2.6.22), and  UNIX  data‐
+              gram (since Linux 3.4) sockets: return the real length of the
+              packet  or  datagram, even when it was longer than the passed
+              buffer.
+
+              For use with Internet stream sockets, see [1mtcp[22m(7).
+
+       [1mMSG_WAITALL [22m(since Linux 2.2)
+              This flag requests that the operation block  until  the  full
+              request  is  satisfied.   However,  the call may still return
+              less data than requested if a signal is caught, an  error  or
+              disconnect  occurs,  or  the next data to be received is of a
+              different type than that returned.  This flag has  no  effect
+              for datagram sockets.
+
+   [1mrecvfrom()[0m
+       [1mrecvfrom[22m()  places  the  received  message into the buffer [4mbuf[24m.  The
+       caller must specify the size of the buffer in [4mlen[24m.
+
+       If [4msrc_addr[24m is not NULL, and the underlying  protocol  provides  the
+       source  address of the message, that source address is placed in the
+       buffer pointed to by [4msrc_addr[24m.  In this case, [4maddrlen[24m is a value‐re‐
+       sult argument.  Before the call, it should  be  initialized  to  the
+       size  of  the buffer associated with [4msrc_addr[24m.  Upon return, [4maddrlen[0m
+       is updated to contain the actual size of the  source  address.   The
+       returned  address  is truncated if the buffer provided is too small;
+       in this case, [4maddrlen[24m will return a value greater than was  supplied
+       to the call.
+
+       If  the caller is not interested in the source address, [4msrc_addr[24m and
+       [4maddrlen[24m should be specified as NULL.
+
+   [1mrecv()[0m
+       The [1mrecv[22m() call is normally used only on  a  [4mconnected[24m  socket  (see
+       [1mconnect[22m(2)).  It is equivalent to the call:
+
+           recvfrom(fd, buf, len, flags, NULL, 0);
+
+   [1mrecvmsg()[0m
+       The [1mrecvmsg[22m() call uses a [4mmsghdr[24m structure to minimize the number of
+       directly  supplied  arguments.  This structure is defined as follows
+       in [4m<sys/socket.h>[24m:
+
+           struct msghdr {
+               void         *msg_name;       /* Optional address */
+               socklen_t     msg_namelen;    /* Size of address */
+               struct iovec *msg_iov;        /* Scatter/gather array */
+               size_t        msg_iovlen;     /* # elements in msg_iov */
+               void         *msg_control;    /* Ancillary data, see below */
+               size_t        msg_controllen; /* Ancillary data buffer len */
+               int           msg_flags;      /* Flags on received message */
+           };
+
+       The [4mmsg_name[24m field points to a caller‐allocated buffer that is  used
+       to  return  the  source  address  if the socket is unconnected.  The
+       caller should set [4mmsg_namelen[24m to the size of this buffer before this
+       call; upon return from a successful call, [4mmsg_namelen[24m  will  contain
+       the  length  of  the  returned address.  If the application does not
+       need to know the source address, [4mmsg_name[24m can be specified as NULL.
+
+       The fields [4mmsg_iov[24m and [4mmsg_iovlen[24m describe scatter‐gather locations,
+       as discussed in [1mreadv[22m(2).
+
+       The field [4mmsg_control[24m, which has length [4mmsg_controllen[24m, points to  a
+       buffer  for other protocol control‐related messages or miscellaneous
+       ancillary data.  When [1mrecvmsg[22m()  is  called,  [4mmsg_controllen[24m  should
+       contain  the length of the available buffer in [4mmsg_control[24m; upon re‐
+       turn from a successful call it will contain the length of  the  con‐
+       trol message sequence.
+
+       The messages are of the form:
+
+           struct cmsghdr {
+               size_t cmsg_len;    /* Data byte count, including header
+                                      (type is socklen_t in POSIX) */
+               int    cmsg_level;  /* Originating protocol */
+               int    cmsg_type;   /* Protocol-specific type */
+           /* followed by
+               unsigned char cmsg_data[]; */
+           };
+
+       Ancillary  data  should  be  accessed  only by the macros defined in
+       [1mcmsg[22m(3).
+
+       As an example, Linux uses this ancillary data mechanism to pass  ex‐
+       tended  errors,  IP  options,  or  file descriptors over UNIX domain
+       sockets.  For further information on the use of  ancillary  data  in
+       various socket domains, see [1munix[22m(7) and [1mip[22m(7).
+
+       The [4mmsg_flags[24m field in the [4mmsghdr[24m is set on return of [1mrecvmsg[22m().  It
+       can contain several flags:
+
+       [1mMSG_EOR[0m
+              indicates end‐of‐record; the data returned completed a record
+              (generally used with sockets of type [1mSOCK_SEQPACKET[22m).
+
+       [1mMSG_TRUNC[0m
+              indicates  that  the  trailing portion of a datagram was dis‐
+              carded because the datagram was larger than the  buffer  sup‐
+              plied.
+
+       [1mMSG_CTRUNC[0m
+              indicates that some control data was discarded due to lack of
+              space in the buffer for ancillary data.
+
+       [1mMSG_OOB[0m
+              is  returned  to  indicate that expedited or out‐of‐band data
+              was received.
+
+       [1mMSG_ERRQUEUE[0m
+              indicates that no data was received  but  an  extended  error
+              from the socket error queue.
+
+[1mRETURN VALUE[0m
+       These  calls  return the number of bytes received, or -1 if an error
+       occurred.  In the event of an error, [4merrno[24m is set  to  indicate  the
+       error.
+
+       When a stream socket peer has performed an orderly shutdown, the re‐
+       turn value will be 0 (the traditional "end‐of‐file" return).
+
+       Datagram sockets in various domains (e.g., the UNIX and Internet do‐
+       mains)  permit  zero‐length  datagrams.  When such a datagram is re‐
+       ceived, the return value is 0.
+
+       The value 0 may also be returned if the requested number of bytes to
+       receive from a stream socket was 0.
+
+[1mERRORS[0m
+       These are some standard errors generated by the socket layer.  Addi‐
+       tional errors may be generated and returned from the underlying pro‐
+       tocol modules; see their manual pages.
+
+       [1mEAGAIN [22mor [1mEWOULDBLOCK[0m
+              The socket is marked nonblocking and  the  receive  operation
+              would  block, or a receive timeout had been set and the time‐
+              out expired before data was received.  POSIX.1 allows  either
+              error  to  be  returned  for  this case, and does not require
+              these constants to have the same value, so a portable  appli‐
+              cation should check for both possibilities.
+
+       [1mEBADF  [22mThe argument [4msockfd[24m is an invalid file descriptor.
+
+       [1mECONNREFUSED[0m
+              A  remote host refused to allow the network connection (typi‐
+              cally because it is not running the requested service).
+
+       [1mEFAULT [22mThe receive buffer pointer(s) point outside the process’s ad‐
+              dress space.
+
+       [1mEINTR  [22mThe receive was interrupted by delivery of  a  signal  before
+              any data was available; see [1msignal[22m(7).
+
+       [1mEINVAL [22mInvalid argument passed.
+
+       [1mENOMEM [22mCould not allocate memory for [1mrecvmsg[22m().
+
+       [1mENOTCONN[0m
+              The  socket is associated with a connection‐oriented protocol
+              and has not been connected (see [1mconnect[22m(2) and [1maccept[22m(2)).
+
+       [1mENOTSOCK[0m
+              The file descriptor [4msockfd[24m does not refer to a socket.
+
+[1mSTANDARDS[0m
+       POSIX.1‐2001, POSIX.1‐2008, 4.4BSD (these interfaces first  appeared
+       in 4.2BSD).
+
+       POSIX.1 describes only the [1mMSG_OOB[22m, [1mMSG_PEEK[22m, and [1mMSG_WAITALL [22mflags.
+
+[1mNOTES[0m
+       If  a  zero‐length  datagram  is  pending, [1mread[22m(2) and [1mrecv[22m() with a
+       [4mflags[24m argument of zero provide different behavior.  In this  circum‐
+       stance,  [1mread[22m(2) has no effect (the datagram remains pending), while
+       [1mrecv[22m() consumes the pending datagram.
+
+       The [4msocklen_t[24m type was invented by POSIX.  See also [1maccept[22m(2).
+
+       According to POSIX.1, the [4mmsg_controllen[24m field of the [4mmsghdr[24m  struc‐
+       ture  should  be typed as [4msocklen_t[24m, and the [4mmsg_iovlen[24m field should
+       be typed as [4mint[24m, but glibc currently types both as [4msize_t[24m.
+
+       See [1mrecvmmsg[22m(2) for information about a Linux‐specific  system  call
+       that can be used to receive multiple datagrams in a single call.
+
+[1mEXAMPLES[0m
+       An example of the use of [1mrecvfrom[22m() is shown in [1mgetaddrinfo[22m(3).
+
+[1mSEE ALSO[0m
+       [1mfcntl[22m(2),  [1mgetsockopt[22m(2),  [1mread[22m(2),  [1mrecvmmsg[22m(2),  [1mselect[22m(2),  [1mshut‐[0m
+       [1mdown[22m(2),  [1msocket[22m(2),   [1mcmsg[22m(3),   [1msockatmark[22m(3),   [1mip[22m(7),   [1mipv6[22m(7),
+       [1msocket[22m(7), [1mtcp[22m(7), [1mudp[22m(7), [1munix[22m(7)
+
+Linux man‐pages 6.03             2022‐12‐03                         [4mrecv[24m(2)
